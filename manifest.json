@@ -1,8 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "aimates.space (Painel Estável)",
+  "name": "aimates.space (Painel Estável)1",
   "version": "10.0",
   "description": "Uma simulação que mostra insights da comunidade em chats de IA.",
+  "host_permissions": [
+    "http://localhost:3000/*", 
+    "http://127.0.0.1:3000/*"
+  ],
   "content_scripts": [
     {
       "matches": ["https://gemini.google.com/*"],

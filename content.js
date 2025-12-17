@@ -1,288 +1,529 @@
-// --- FUNÇÕES DE BANCO DE DADOS (localStorage) ---
-const getDb = () => JSON.parse(localStorage.getItem("aimatesDb") || "{}");
-const saveDb = (db) => localStorage.setItem("aimatesDb", JSON.stringify(db));
-const getCommentsForTopic = (topic) => getDb()[topic] || [];
+// ============================================================================
+// AIMATES EXTENSION - "DEEP ONYX" (Updated: Toggle on Header Click)
+// ============================================================================
 
-const addCommentToTopic = (topic, newComment) => {
-    const db = getDb();
-    if (!db[topic]) db[topic] = [];
-    newComment.id = `comment_${Date.now()}`;
-    newComment.likes = 0;
-    newComment.likedBy = [];
-    newComment.replies = [];
-    db[topic].push(newComment);
-    saveDb(db);
+const API_URL = "http://localhost:3000";
+
+const STYLES = `
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap");
+
+:root {
+  /* Palette - Dark Mode Luxury */
+  --am-bg-overlay: rgba(10, 10, 10, 0.85);
+  --am-bg-surface: rgba(255, 255, 255, 0.04);
+  
+  /* Borders */
+  --am-border-subtle: rgba(255, 255, 255, 0.08);
+  --am-border-highlight: rgba(255, 255, 255, 0.15);
+  
+  /* Accents */
+  --am-accent-gradient: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  --am-accent-glow: rgba(59, 130, 246, 0.5);
+  
+  /* Text */
+  --am-text-primary: #ffffff;
+  --am-text-secondary: #a1a1aa;
+  --am-text-tertiary: #52525b;
+
+  /* Dimensions & Font */
+  --am-radius-xl: 20px;
+  --am-radius-lg: 12px;
+  --am-font: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  
+  /* Shadows */
+  --am-shadow-floating: 
+    0 0 0 1px rgba(255,255,255,0.08) inset,
+    0 24px 48px -12px rgba(0, 0, 0, 0.9);
+}
+
+/* --- Base --- */
+#aimates-floating-panel * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+
+#aimates-floating-panel {
+  position: fixed;
+  top: 96px;
+  right: 32px;
+  width: 360px;
+  height: calc(100vh - 140px);
+  max-height: 700px;
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+
+  background: var(--am-bg-overlay);
+  backdrop-filter: blur(40px) saturate(160%);
+  -webkit-backdrop-filter: blur(40px) saturate(160%);
+  
+  border-radius: var(--am-radius-xl);
+  box-shadow: var(--am-shadow-floating);
+  
+  font-family: var(--am-font);
+  color: var(--am-text-primary);
+  
+  /* Animation */
+  opacity: 0;
+  transform: translateY(10px) scale(0.98);
+  transition: all 0.5s cubic-bezier(0.19, 1, 0.22, 1);
+  overflow: hidden;
+}
+
+#aimates-floating-panel.visible { opacity: 1; transform: translateY(0) scale(1); }
+
+/* --- Minimized State --- */
+#aimates-floating-panel.minimized {
+  height: 68px; /* Altura fixa da header */
+  overflow: hidden;
+  border-radius: 34px; /* Pill shape total */
+  width: 280px; /* Mais estreito quando minimizado */
+  cursor: pointer; /* Indica que o card todo é clicável quando fechado */
+}
+
+#aimates-floating-panel.minimized .aimates-feed-body,
+#aimates-floating-panel.minimized .aimates-footer {
+  opacity: 0;
+  pointer-events: none;
+  display: none;
+}
+
+#aimates-floating-panel.minimized .aimates-header {
+  border-bottom: none;
+  height: 100%;
+}
+
+/* --- Header --- */
+.aimates-header {
+  padding: 0 20px;
+  height: 68px;
+  border-bottom: 1px solid var(--am-border-subtle);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(to bottom, rgba(255,255,255,0.03), transparent);
+  transition: all 0.3s ease;
+  cursor: pointer; /* <--- NOVA: A header é sempre clicável para minimizar/expandir */
+}
+
+.aimates-brand { display: flex; align-items: center; gap: 12px; }
+
+.aimates-brand-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--am-accent-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 15px var(--am-accent-glow);
+}
+.aimates-brand-icon svg { width: 16px; height: 16px; stroke: #fff; }
+
+.aimates-header-info { display: flex; flex-direction: column; gap: 2px; }
+
+.aimates-header-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--am-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Badge de Contagem (Estilo Glass Pill) */
+.aimates-count-badge {
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: var(--am-text-secondary);
+  transition: all 0.3s;
+}
+#aimates-floating-panel:not(.minimized) .aimates-count-badge {
+    background: var(--am-accent-gradient);
+    color: white;
+    border-color: transparent;
+}
+
+.aimates-header-subtitle {
+  font-size: 11px;
+  color: var(--am-text-secondary);
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.aimates-controls { display: flex; gap: 4px; }
+
+.aimates-icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--am-text-secondary);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.aimates-icon-btn:hover { background: var(--am-bg-surface); color: white; }
+
+/* --- Feed --- */
+.aimates-feed-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 16px;
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.aimates-feed-body::-webkit-scrollbar { width: 0px; }
+
+.aimates-feed-item {
+  animation: slideIn 0.3s ease-out forwards;
+}
+@keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+.aimates-post-bubble {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--am-border-subtle);
+  border-radius: 12px;
+  padding: 12px;
+  position: relative;
+}
+
+.aimates-post-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+.aimates-author { font-weight: 600; color: var(--am-text-primary); }
+.aimates-time { color: var(--am-text-tertiary); }
+.aimates-text { font-size: 13px; line-height: 1.5; color: var(--am-text-secondary); }
+
+/* --- Footer & Updated Form (The "Stack") --- */
+.aimates-footer {
+  padding: 16px;
+  background: linear-gradient(to top, rgba(0,0,0,0.4), transparent);
+}
+
+.aimates-input-stack {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--am-border-subtle);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.aimates-input-stack:focus-within {
+  background: rgba(0, 0, 0, 0.5);
+  border-color: rgba(255,255,255,0.2);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+
+/* Input de Nome (Top) */
+.aimates-input-name {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--am-border-subtle);
+  color: var(--am-text-primary);
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  outline: none;
+  font-family: inherit;
+}
+.aimates-input-name::placeholder { color: var(--am-text-tertiary); }
+
+/* Container flex para o insight e botão */
+.aimates-input-row {
+  display: flex;
+  align-items: center;
+  padding: 4px;
+}
+
+/* Input de Texto (Bottom) */
+.aimates-input-text {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: white;
+  padding: 10px; /* Padding menor pois está dentro da row */
+  font-size: 13px;
+  outline: none;
+  font-family: inherit;
+  resize: none;
+  height: 40px;
+}
+
+.aimates-send-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px; /* Squircle */
+  border: none;
+  background: var(--am-accent-gradient);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-right: 4px;
+}
+.aimates-send-btn:hover { filter: brightness(1.1); transform: scale(1.05); }
+.aimates-send-btn:disabled { opacity: 0.3; cursor: not-allowed; filter: grayscale(1); transform: none; }
+
+/* Empty State */
+.aimates-empty {
+  text-align: center; color: var(--am-text-tertiary); padding: 40px 0;
+}
+`;
+
+const injectStyles = () => {
+    if (document.getElementById('aimates-styles')) return;
+    const styleSheet = document.createElement("style");
+    styleSheet.id = 'aimates-styles';
+    styleSheet.innerText = STYLES;
+    document.head.appendChild(styleSheet);
 };
 
-const toggleLike = (topic, commentId) => {
-    const db = getDb();
-    const userId = "currentUser";
-    if (!db[topic]) return;
-    const comment = db[topic].find((c) => c.id === commentId);
-    if (!comment) return;
-
-    if (!comment.likedBy) comment.likedBy = []; 
-
-    if (comment.likedBy.includes(userId)) {
-        comment.likes = Math.max(0, comment.likes - 1);
-        comment.likedBy = comment.likedBy.filter((id) => id !== userId);
-    } else {
-        comment.likes++;
-        comment.likedBy.push(userId);
+// --- API MOCK (Funcionalidade) ---
+const fetchClusterData = async (promptText) => {
+    try {
+        const response = await fetch(`${API_URL}/api/cluster`, {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: promptText })
+        });
+        return await response.json(); 
+    } catch (error) {
+        return { clusterId: "mock-1", comments: [] }; 
     }
-    saveDb(db);
 };
 
-const addReply = (topic, commentId, reply) => {
-    const db = getDb();
-    if (!db[topic]) return;
-    const comment = db[topic].find((c) => c.id === commentId);
-    if (!comment) return;
-    reply.id = `reply_${Date.now()}`;
-    reply.timestamp = new Date().toISOString();
-    if (!comment.replies) comment.replies = [];
-    comment.replies.push(reply);
-    saveDb(db);
+const postComment = async (clusterId, newComment) => {
+    try {
+        await fetch(`${API_URL}/api/comments`, {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clusterId, comment: newComment })
+        });
+    } catch(e) {}
 };
 
-const getInitials = (name) => name.charAt(0).toUpperCase();
-const timeAgo = (timestamp) => {
-    const now = new Date();
-    const seconds = Math.floor((now - new Date(timestamp)) / 1000);
-    let interval = seconds / 31536000; if (interval > 1) return `${Math.floor(interval)}a`;
-    interval = seconds / 2592000; if (interval > 1) return `${Math.floor(interval)}m`;
-    interval = seconds / 86400; if (interval > 1) return `${Math.floor(interval)}d`;
-    interval = seconds / 3600; if (interval > 1) return `${Math.floor(interval)}h`;
-    interval = seconds / 60; if (interval > 1) return `${Math.floor(interval)}min`;
-    return `${Math.floor(seconds)}s`;
+// --- LOGIC ---
+let currentTopicText = null;
+let currentClusterId = null; 
+// REQUIREMENT: Start Minimized
+let isPanelMinimized = true; 
+
+const ICONS = {
+    brain: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/></svg>`,
+    close: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`,
+    chevron: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`,
+    send: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`
 };
-
-
-// --- LÓGICA DA INTERFACE ---
-let currentTopic = null;
-let isPanelMinimized = false;
 
 const hideFloatingPanel = () => {
     const panel = document.getElementById("aimates-floating-panel");
     if (panel) {
         panel.classList.remove("visible");
-        setTimeout(() => panel.remove(), 300);
+        setTimeout(() => panel.remove(), 500);
     }
 };
 
-const showFloatingPanel = (topic) => {
-    topic = topic.trim().toLowerCase();
+const showFloatingPanel = async (topicText) => {
+    injectStyles();
+    topicText = topicText.trim();
+    currentTopicText = topicText;
     
-    currentTopic = topic;
-    hideFloatingPanel();
+    const oldPanel = document.getElementById("aimates-floating-panel");
+    if(oldPanel) oldPanel.remove();
 
-    const comments = getCommentsForTopic(topic);
     const panel = document.createElement("div");
     panel.id = "aimates-floating-panel";
-    if (isPanelMinimized) {
-        panel.classList.add('minimized');
-    }
-
-    panel.innerHTML = `
-        ${createHeaderHTML(topic, comments.length)}
-        ${createFeedBodyHTML(comments, topic)}
-        ${createFormHTML(topic)}
-    `;
-
+    
+    // Aplica a classe minimized logo de cara se a flag for true
+    if (isPanelMinimized) panel.classList.add('minimized');
+    
+    // Header Inicial (Skeleton)
+    panel.innerHTML = `<div class="aimates-header"><div class="aimates-brand"><div class="aimates-brand-icon">${ICONS.brain}</div></div></div>`;
     document.body.appendChild(panel);
-    addPanelEventListeners(panel, topic);
-    setTimeout(() => panel.classList.add("visible"), 50);
+    
+    // Trigger animation
+    requestAnimationFrame(() => panel.classList.add("visible"));
+
+    const data = await fetchClusterData(topicText);
+    currentClusterId = data.clusterId;
+    const comments = data.comments || [];
+
+    renderPanelContent(panel, topicText, comments);
 };
 
+function renderPanelContent(panel, topic, comments) {
+    const safeTopic = topic.length > 30 ? topic.substring(0, 30) + "..." : topic;
+    const count = comments.length;
 
-function createHeaderHTML(topic, commentCount) {
-    const topicPreview = topic.length > 50 ? topic.substring(0, 50) + "..." : topic;
-    return `
+    // Header com Badge de Contagem
+    const header = `
     <div class="aimates-header">
-        <div class="aimates-header-content">
-            <div class="aimates-topic-info">
-                <div class="aimates-topic-icon">💬</div>
-                <div class="aimates-topic-details">
-                    <h3 class="aimates-topic-title">Discussão</h3>
-                    <p class="aimates-topic-preview">${topicPreview}</p>
+        <div class="aimates-brand">
+            <div class="aimates-header-info">
+                <div class="aimates-header-title">
+                    Conversas 
+                    <span class="aimates-count-badge">${count}</span>
                 </div>
-            </div>
-            <div class="aimates-stats">
-                <div class="aimates-stat">
-                    <span class="aimates-stat-number">${commentCount}</span>
-                    <span class="aimates-stat-label">insights</span>
-                </div>
+                <span class="aimates-header-subtitle">${safeTopic}</span>
             </div>
         </div>
-        <div class="aimates-header-controls">
-            <button class="aimates-toggle-btn" data-action="toggle-panel">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform: ${isPanelMinimized ? 'rotate(180deg)' : 'rotate(0deg)'}"><polyline points="6,9 12,15 18,9"></polyline></svg>
+        <div class="aimates-controls">
+            <button class="aimates-icon-btn" data-action="toggle">
+                <div style="transform: ${isPanelMinimized ? 'rotate(0deg)' : 'rotate(180deg)'}; transition: transform 0.3s; display:flex;">${ICONS.chevron}</div>
             </button>
-            <button class="aimates-close-btn" data-action="close-panel">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-            </button>
+            <button class="aimates-icon-btn" data-action="close">${ICONS.close}</button>
         </div>
     </div>`;
-}
 
-function createFeedBodyHTML(comments, topic) {
-    let commentsHtml = '';
-    if (comments.length > 0) {
-        comments.slice().reverse().forEach((comment, index) => {
-            const isLiked = comment.likedBy && comment.likedBy.includes("currentUser");
-            const repliesHtml = comment.replies && comment.replies.length > 0 ? `
-                <div class="aimates-replies">${comment.replies.map(reply => `
-                    <div class="aimates-reply">
-                        <div class="aimates-reply-avatar">${getInitials(reply.author)}</div>
-                        <div class="aimates-reply-content">
-                            <div class="aimates-reply-header">
-                                <span class="aimates-reply-author">${reply.author}</span>
-                                <span class="aimates-reply-time">${timeAgo(reply.timestamp)}</span>
-                            </div>
-                            <p class="aimates-reply-text">${reply.text}</p>
-                        </div>
-                    </div>`).join('')}
-                </div>` : '';
-
-            commentsHtml += `
-            <div class="aimates-feed-item" style="animation-delay: ${index * 0.1}s">
-                <div class="aimates-avatar">
-                    <div class="aimates-avatar-inner">${getInitials(comment.author)}</div>
-                </div>
-                <div class="aimates-post-content">
+    // Feed
+    let feedContent = '';
+    if (count > 0) {
+        comments.slice().reverse().forEach(c => {
+            feedContent += `
+            <div class="aimates-feed-item">
+                <div class="aimates-post-bubble">
                     <div class="aimates-post-header">
-                        <span class="aimates-post-author">${comment.author}</span>
-                        <span class="aimates-post-time">${timeAgo(comment.timestamp)}</span>
+                        <span class="aimates-author">${c.author}</span>
+                        <span class="aimates-time">agora</span>
                     </div>
-                    <p class="aimates-post-text">${comment.text}</p>
-                    <div class="aimates-post-actions">
-                        <button class="aimates-action-btn aimates-like-btn ${isLiked ? 'liked' : ''}" data-action="like" data-comment-id="${comment.id}">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="${isLiked ? "#ef4444" : "none"}" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-                            <span>${comment.likes || 0}</span>
-                        </button>
-                        <button class="aimates-action-btn aimates-reply-btn" data-action="toggle-reply" data-comment-id="${comment.id}">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-                            <span>Responder</span>
-                        </button>
-                    </div>
-                    ${repliesHtml}
-                    <div class="aimates-reply-form" id="reply-form-${comment.id}" style="display: none;">
-                        <div class="aimates-reply-input-group">
-                            <input type="text" class="aimates-reply-input" placeholder="Seu nome" required>
-                            <textarea class="aimates-reply-textarea" placeholder="Sua resposta..." required rows="2"></textarea>
-                            <div class="aimates-reply-actions">
-                                <button class="aimates-reply-cancel" data-action="cancel-reply" data-comment-id="${comment.id}">Cancelar</button>
-                                <button class="aimates-reply-submit" data-action="submit-reply" data-comment-id="${comment.id}">Responder</button>
-                            </div>
-                        </div>
-                    </div>
+                    <div class="aimates-text">${c.text}</div>
                 </div>
             </div>`;
         });
     } else {
-        commentsHtml = `<div class="aimates-empty-state"><div class="aimates-empty-icon">💭</div><h4 class="aimates-empty-title">Nenhuma discussão ainda</h4><p class="aimates-empty-description">Seja o primeiro a compartilhar seus insights sobre este tópico!</p></div>`;
+        feedContent = `<div class="aimates-empty">Seja o primeiro a comentar sobre isso.</div>`;
     }
-    return `<div class="aimates-feed-body">${commentsHtml}</div>`;
+
+    // Footer com FORM STACK (Nome + Insight)
+    const footer = `
+    <div class="aimates-footer">
+        <form class="aimates-input-stack">
+            <input type="text" class="aimates-input-name" placeholder="Seu nome..." name="author" autocomplete="off">
+            
+            <div class="aimates-input-row">
+                <input type="text" class="aimates-input-text" placeholder="Adicione seu insight..." name="insight" autocomplete="off">
+                <button type="submit" class="aimates-send-btn" disabled>
+                    ${ICONS.send}
+                </button>
+            </div>
+        </form>
+    </div>`;
+
+    panel.innerHTML = `${header}<div class="aimates-feed-body">${feedContent}</div>${footer}`;
+    attachEvents(panel, topic);
 }
 
-function createFormHTML(topic) {
-    return `
-    <form class="aimates-comment-form">
-        <div class="aimates-form-header"><h4>Compartilhe seu insight</h4></div>
-        <div class="aimates-form-fields">
-            <div class="aimates-input-group"><input type="text" class="aimates-input" placeholder="Seu nome de usuário" required><div class="aimates-input-border"></div></div>
-            <div class="aimates-textarea-group"><textarea class="aimates-textarea" placeholder="O que você pensa sobre isso?" required rows="3"></textarea><div class="aimates-textarea-border"></div></div>
-            <button type="submit" class="aimates-submit-button">
-                <span class="aimates-button-text">Publicar Insight</span>
-                <svg class="aimates-button-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22,2 15,22 11,13 2,9 22,2"></polygon></svg>
-            </button>
-        </div>
-    </form>`;
-}
+function attachEvents(panel, topic) {
+    const form = panel.querySelector('form');
+    const nameInput = panel.querySelector('input[name="author"]');
+    const textInput = panel.querySelector('input[name="insight"]');
+    const sendBtn = panel.querySelector('.aimates-send-btn');
+    
+    // Validação para habilitar botão
+    const validate = () => {
+        const hasName = nameInput.value.trim().length > 0;
+        const hasText = textInput.value.trim().length > 0;
+        sendBtn.disabled = !(hasName && hasText);
+    };
 
-function addPanelEventListeners(panel, topic) {
+    if(form) {
+        nameInput.addEventListener('input', validate);
+        textInput.addEventListener('input', validate);
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            sendBtn.innerHTML = `<div style="width:12px; height:12px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin 1s linear infinite"></div>`;
+            
+            const newComment = { 
+                author: nameInput.value.trim(), 
+                text: textInput.value.trim(), 
+                timestamp: new Date().toISOString() 
+            };
+            
+            await postComment(currentClusterId, newComment);
+            showFloatingPanel(topic);
+        });
+    }
+
+    // --- LÓGICA DE CLIQUE DUPLA (Header e Minimized) ---
     panel.addEventListener('click', (e) => {
-        const target = e.target;
-        const actionBtn = target.closest('[data-action]');
-        if (!actionBtn) return;
+        const btn = e.target.closest('button');
 
-        const action = actionBtn.dataset.action;
-        const commentId = actionBtn.dataset.commentId;
+        // Função toggle
+        const toggleState = () => {
+            isPanelMinimized = !isPanelMinimized;
+            panel.classList.toggle('minimized', isPanelMinimized);
+            
+            const chevronContainer = panel.querySelector('button[data-action="toggle"] div');
+            if(chevronContainer) chevronContainer.style.transform = isPanelMinimized ? 'rotate(0deg)' : 'rotate(180deg)';
+        };
 
-        switch(action) {
-            case 'close-panel':
+        // 1. Prioridade: Botões (Fechar ou Toggle explícito)
+        if (btn) {
+            const action = btn.dataset.action;
+            if (action === 'close') {
+                e.stopPropagation(); 
                 hideFloatingPanel();
-                break;
-            case 'toggle-panel':
-                isPanelMinimized = !isPanelMinimized;
-                panel.classList.toggle("minimized", isPanelMinimized);
-                actionBtn.querySelector("svg").style.transform = isPanelMinimized ? "rotate(180deg)" : "rotate(0deg)";
-                break;
-            case 'like':
-                toggleLike(topic, commentId);
-                showFloatingPanel(topic);
-                break;
-            case 'toggle-reply': {
-                const form = document.getElementById(`reply-form-${commentId}`);
-                if (form) form.style.display = form.style.display === "none" ? "block" : "none";
-                break;
+                return;
             }
-            case 'cancel-reply': {
-                const form = document.getElementById(`reply-form-${commentId}`);
-                if (form) form.style.display = "none";
-                break;
+            if (action === 'toggle') {
+                e.stopPropagation();
+                toggleState();
+                return;
             }
-            case 'submit-reply': {
-                const form = document.getElementById(`reply-form-${commentId}`);
-                const nameInput = form.querySelector(".aimates-reply-input");
-                const textInput = form.querySelector(".aimates-reply-textarea");
-                if (nameInput.value.trim() && textInput.value.trim()) {
-                    addReply(topic, commentId, { author: nameInput.value.trim(), text: textInput.value.trim() });
-                    showFloatingPanel(topic);
-                }
-                break;
-            }
+            return; // Outros botões (submit)
+        }
+
+        // 2. Se estiver MINIMIZADO: Clique em qualquer lugar expande
+        if (isPanelMinimized) {
+            toggleState();
+            return;
+        }
+
+        // 3. Se estiver EXPANDIDO: Clique SOMENTE na HEADER minimiza
+        // (Usamos closest para ver se o alvo do clique está dentro da header)
+        if (e.target.closest('.aimates-header')) {
+            toggleState();
         }
     });
-
-    const mainForm = panel.querySelector('.aimates-comment-form');
-    mainForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const submitBtn = mainForm.querySelector(".aimates-submit-button");
-        submitBtn.classList.add("loading");
-
-        setTimeout(() => {
-            const userInput = mainForm.querySelector(".aimates-input").value;
-            const commentInput = mainForm.querySelector(".aimates-textarea").value;
-            const newComment = { author: userInput, text: commentInput, timestamp: new Date().toISOString() };
-            addCommentToTopic(topic, newComment);
-            showFloatingPanel(topic);
-        }, 500);
-    });
 }
 
+// Global Spin Animation
+if (!document.getElementById('aimates-global-spin')) {
+    const s = document.createElement('style');
+    s.id = 'aimates-global-spin';
+    s.innerHTML = `@keyframes spin { to { transform: rotate(360deg); } }`;
+    document.head.appendChild(s);
+}
 
-// --- LÓGICA DE DETECÇÃO ---
-window.addEventListener("urlchange", () => { hideFloatingPanel(); currentTopic = null; });
+// --- OBSERVERS (Inalterado) ---
+window.addEventListener("urlchange", () => { hideFloatingPanel(); currentTopicText = null; });
 const observer = new MutationObserver(() => {
-    const userPromptSelector = ".query-text";
+    const userPromptSelector = ".query-text, h1"; 
     const allPrompts = document.querySelectorAll(userPromptSelector);
     if (allPrompts.length > 0) {
         const lastPrompt = allPrompts[allPrompts.length - 1];
-        const topic = lastPrompt.innerText.trim().toLowerCase();
-        if (topic && topic !== currentTopic) {
+        const topic = lastPrompt.innerText.trim();
+        if (topic && topic !== currentTopicText && topic.length > 5) {
             showFloatingPanel(topic);
         }
     }
 });
 
 setTimeout(() => {
-    const targetNode = document.querySelector("main");
-    if (targetNode) {
-        console.log("Aimates Social Network (v2.4): Correção do glow do avatar.");
-        observer.observe(targetNode, { childList: true, subtree: true });
-        const allPrompts = document.querySelectorAll(".query-text");
-        if (allPrompts.length > 0) showFloatingPanel(allPrompts[allPrompts.length - 1].innerText);
-    }
+    const targetNode = document.body;
+    if (targetNode) observer.observe(targetNode, { childList: true, subtree: true });
 }, 1000);
+
 (function(){let oldPushState=history.pushState;history.pushState=function pushState(){let ret=oldPushState.apply(this,arguments);window.dispatchEvent(new Event("urlchange"));return ret;};let oldReplaceState=history.replaceState;history.replaceState=function replaceState(){let ret=oldReplaceState.apply(this,arguments);window.dispatchEvent(new Event("urlchange"));return ret;};window.addEventListener("popstate",()=>{window.dispatchEvent(new Event("urlchange"));});})();
